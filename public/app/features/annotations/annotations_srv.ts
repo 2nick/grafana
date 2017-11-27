@@ -9,7 +9,7 @@ export class AnnotationsSrv {
   alertStatesPromise: any;
 
   /** @ngInject */
-  constructor(private $rootScope, private $q, private datasourceSrv, private backendSrv, private timeSrv) {
+  constructor(private $rootScope, private $q, private datasourceSrv, private backendSrv, private timeSrv, private templateSrv) {
     $rootScope.onAppEvent('refresh', this.clearCache.bind(this), $rootScope);
     $rootScope.onAppEvent('dashboard-initialized', this.clearCache.bind(this), $rootScope);
   }
@@ -20,11 +20,19 @@ export class AnnotationsSrv {
   }
 
   getAnnotations(options) {
+    let panelAnnotationsFilter = [];
+    if (options.panel.annotationsTags !== undefined) {
+      panelAnnotationsFilter = this.templateSrv.replace(
+        options.panel.annotationsTags,
+        options.panel.scopedVars,
+        (v) => (_.isArray(v) ? v.join(',') : v)
+      ).split(',').map(tag => tag.trim());
+    }
     return this.$q
       .all([this.getGlobalAnnotations(options), this.getAlertStates(options)])
       .then(results => {
         // combine the annotations and flatten results
-        var annotations = _.flattenDeep(results[0]);
+        let annotations = _.flattenDeep(results[0]);
 
         // filter out annotations that do not belong to requesting panel
         annotations = _.filter(annotations, item => {
@@ -32,6 +40,16 @@ export class AnnotationsSrv {
           if (item.panelId && item.source.type === 'dashboard') {
             return item.panelId === options.panel.id;
           }
+
+          // if panel has tags for annotations then skip annotation if none of tags found
+          if (options.panel.annotationsTags !== undefined) {
+            if (panelAnnotationsFilter.length > 0) {
+              let validTags = _.filter(item.tags, tag => panelAnnotationsFilter.indexOf(tag) !== -1);
+
+              return validTags.length > 0;
+            }
+          }
+
           return true;
         });
 
